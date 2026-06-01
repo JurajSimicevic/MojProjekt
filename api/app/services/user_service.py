@@ -1,31 +1,41 @@
-from passlib.context import CryptContext
+# =============================================================
+# user_service.py — Poslovna logika za korisnike
+# =============================================================
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.errors import AppError
-from app.repositories import user_repo
+from app.core.security import hash_password
 from app.models.user import User
+from app.repositories import user_repo
 
-# Inicijalizacija passlib contexta za bcrypt.
-# Na novijim verzijama Pythona (3.13+), osigurajte da je instaliran 'bcrypt' paket.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__ident="2b")
+ALLOWED_STAFF_ROLES = {"restaurant", "courier"}
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+async def register_customer(db: AsyncSession, username: str, password: str) -> User:
+    return await _register(db, username, password, "customer")
 
-async def register_user(db: AsyncSession, username: str, password: str, role: str) -> User:
-    """
-    Poslovna logika za registraciju: provjera jedinstvenosti i hashiranje.
-    """
+
+async def create_staff_user(
+    db: AsyncSession, username: str, password: str, role: str
+) -> User:
+    if role not in ALLOWED_STAFF_ROLES:
+        raise AppError(
+            "validation_error",
+            "Uloga mora biti 'restaurant' ili 'courier'",
+            400,
+        )
+    return await _register(db, username, password, role)
+
+
+async def _register(db: AsyncSession, username: str, password: str, role: str) -> User:
     existing = await user_repo.get_by_username(db, username)
     if existing:
         raise AppError("username_taken", "Korisničko ime je zauzeto", 400)
-    
-    hashed = hash_password(password)
+
     return await user_repo.create(
-        db, 
-        username=username, 
-        password_hash=hashed, 
-        role=role
+        db,
+        username=username,
+        password_hash=hash_password(password),
+        role=role,
     )

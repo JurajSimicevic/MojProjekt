@@ -1,21 +1,21 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-class UserBase(BaseModel):
+
+class CustomerRegister(BaseModel):
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1)
+
+
+class StaffCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1)
+    role: str = Field(description="restaurant ili courier")
+
+
+class UserRead(BaseModel):
+    id: int
     username: str
     role: str
-
-class UserCreate(UserBase):
-    """Schema za registraciju novog korisnika."""
-    password: str
-
-class UserRead(UserBase):
-    """Schema za povratne podatke o korisniku."""
-    id: int
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
-
-class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"

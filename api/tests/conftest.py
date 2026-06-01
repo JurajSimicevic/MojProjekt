@@ -1,15 +1,3 @@
-# =============================================================
-# conftest.py — Test infrastruktura (fixtures i DB setup)
-# =============================================================
-# Koristimo in-memory SQLite umjesto PostgreSQL-a za testove:
-#   - Brzo (nema mrežnih poziva)
-#   - Nema ovisnosti o Dockeru
-#   - Svaki test dobije čistu bazu (izolacija)
-#
-# StaticPool osigurava da sve async sesije dijele istu
-# in-memory bazu (inače bi svaka konekcija dobila svoju).
-# =============================================================
-
 from typing import AsyncGenerator
 
 import pytest
@@ -19,14 +7,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.core.deps import get_db
-from app.services.user_service import hash_password
+from app.core.security import hash_password
 from app.main import app as fastapi_app
-from app.models.user import User
-from app.models.restaurant import Restaurant
 from app.models.menu_item import MenuItem
-from app.models.order import Order
-
-# --- Test engine (SQLite in-memory) ---
+from app.models.restaurant import Restaurant
+from app.models.user import User
 
 engine_test = create_async_engine(
     "sqlite+aiosqlite://",
@@ -38,8 +23,6 @@ TestSessionLocal = async_sessionmaker(
     bind=engine_test, class_=AsyncSession, expire_on_commit=False
 )
 
-
-# --- Dependency override ---
 
 async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
     async with TestSessionLocal() as session:
@@ -54,11 +37,8 @@ async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
 fastapi_app.dependency_overrides[get_db] = _override_get_db
 
 
-# --- Fixtures ---
-
 @pytest.fixture(autouse=True)
 async def setup_database():
-    """Kreira tablice prije testa, briše ih nakon — potpuna izolacija."""
     async with engine_test.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -68,14 +48,12 @@ async def setup_database():
 
 @pytest.fixture
 async def db() -> AsyncGenerator[AsyncSession, None]:
-    """Sesija za seeding test podataka u fixtureima."""
     async with TestSessionLocal() as session:
         yield session
 
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
-    """Async HTTP klijent za testiranje endpointova."""
     transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -83,7 +61,6 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture
 async def admin_user(db: AsyncSession) -> User:
-    """Admin korisnik za testove (username=testadmin, password=admin123)."""
     user = User(
         username="testadmin",
         password_hash=hash_password("admin123"),
@@ -98,24 +75,62 @@ async def admin_user(db: AsyncSession) -> User:
 
 @pytest.fixture
 async def customer_user(db: AsyncSession) -> User:
-    user = User(username="testcustomer", password_hash=hash_password("pass123"), role="customer")
+    user = User(
+        username="testcustomer",
+        password_hash=hash_password("pass123"),
+        role="customer",
+        is_active=True,
+    )
     db.add(user)
     await db.commit()
+    await db.refresh(user)
     return user
 
+
 @pytest.fixture
-async def restaurant_user(db: AsyncSession) -> User:
-    user = User(username="testres", password_hash=hash_password("pass123"), role="restaurant")
+async def restaurant_user(db: AsyncSession) -> tuple[User, Restaurant, list[MenuItem]]:
+    user = User(
+        username="testres",
+        password_hash=hash_password("pass123"),
+        role="restaurant",
+        is_active=True,
+    )
     db.add(user)
     await db.flush()
-    res = Restaurant(name="Test Restoran", address="Adresa 1", owner_id=user.id)
-    db.add(res)
+
+    restaurant = Restaurant(name="Test Restoran", address="Adresa 1", owner_id=user.id)
+    db.add(restaurant)
+    await db.flush()
+
+    items = [
+        MenuItem(name="Burger", price=10.0, restaurant_id=restaurant.id),
+        MenuItem(name="Pomfrit", price=4.0, restaurant_id=restaurant.id),
+    ]
+    db.add_all(items)
     await db.commit()
+    for item in items:
+        await db.refresh(item)
+    await db.refresh(user)
+    await db.refresh(restaurant)
+    return user, restaurant, items
+
+
+@pytest.fixture
+async def courier_user(db: AsyncSession) -> User:
+    user = User(
+        username="testcourier",
+        password_hash=hash_password("pass123"),
+        role="courier",
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
     return user
+
 
 @pytest.fixture
 async def inactive_user(db: AsyncSession) -> User:
-    """Deaktivirani korisnik za testiranje is_active provjere."""
     user = User(
         username="inactive",
         password_hash=hash_password("pass123"),
@@ -127,8 +142,8 @@ async def inactive_user(db: AsyncSession) -> User:
     await db.refresh(user)
     return user
 
+
 async def auth_header(client: AsyncClient, username: str, password: str) -> dict:
-    """Helper: napravi login i vrati Authorization header dict."""
     resp = await client.post("/auth/login", json={"username": username, "password": password})
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

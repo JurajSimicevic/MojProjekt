@@ -1,15 +1,3 @@
-# =============================================================
-# phases.py — Statusi narudžbe (konačni automat)
-# =============================================================
-# Definira životni ciklus narudžbe:
-#   PENDING   -> RESTAURANT_ACCEPTED -> PREPARING -> 
-#   READY     -> PICKED_UP           -> DELIVERED
-#
-# Korištenje u service layeru:
-#   if order.status != OrderStatus.READY:
-#       raise AppError("invalid_transition", "Order is not ready for pickup")
-# =============================================================
-
 from enum import Enum
 
 

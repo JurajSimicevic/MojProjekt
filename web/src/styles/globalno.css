@@ -1,0 +1,39 @@
+@import './tokens.css';
+@import './reset.css';
+
+h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+h3,
+h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.muted {
+  color: var(--boja-tekst-mute);
+}
+
+.akcent {
+  color: var(--boja-akcent);
+}
+
+.uspjeh {
+  color: var(--boja-uspjeh);
+}
+
+.opasnost {
+  color: var(--boja-opasnost);
+}

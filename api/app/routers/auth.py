@@ -1,40 +1,27 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
 
-from app.core.deps import get_db, get_current_user
-from app.schemas.user import UserRead, Token
+from app.core.deps import get_current_user, get_db
+from app.models.user import User
+from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse, UserResponse
 from app.services import auth_service
 
 router = APIRouter()
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-@router.post("/login", response_model=Token)
-async def login(
-    data: LoginRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Prijava u sustav."""
-    user = await auth_service.authenticate(db, data.username, data.password)
+@router.post("/login", response_model=TokenResponse)
+async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    user = await auth_service.authenticate_user(db, body.username, body.password)
     access, refresh = await auth_service.create_tokens(db, user)
-    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
+    return TokenResponse(access_token=access, refresh_token=refresh)
 
-@router.post("/refresh", response_model=Token)
-async def refresh(
-    data: RefreshRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Osvježavanje access tokena."""
-    access, refresh = await auth_service.refresh_tokens(db, data.refresh_token)
-    return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
 
-@router.get("/me", response_model=UserRead)
-async def me(user = Depends(get_current_user)):
-    """Dohvat podataka trenutno prijavljenog korisnika."""
-    return user
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    access, refresh_tok = await auth_service.refresh_tokens(db, body.refresh_token)
+    return TokenResponse(access_token=access, refresh_token=refresh_tok)
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user

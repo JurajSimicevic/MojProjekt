@@ -1,136 +1,125 @@
 # =============================================================
 # seed.py — Inicijalni podaci za razvoj i testiranje
 # =============================================================
-# Kreira admin korisnika, dva demo kluba i njihove korisnike.
-#
-# Pokretanje (iz api/ direktorija):
-#   python -m app.seed
-#
-# Zašto seed?
-#   - Nakon "alembic upgrade head" imamo prazne tablice
-#   - Za razvoj trebamo barem admin login i klubove
-#   - Za testiranje auth/ownership logike (predavanje 3-4)
-#     trebamo dva kluba da dokažemo da jedan ne vidi drugog
-#
-# Idempotentnost:
-#   Skripta provjerava postoji li već zapis s istim username/imenom.
-#   Ako postoji — preskače. Sigurno je pokrenuti višestruko.
-# =============================================================
 
 import asyncio
 import logging
 
-import bcrypt as _bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal, engine
-from app.models.club import Club
+from app.core.security import hash_password
+from app.models.menu_item import MenuItem
+from app.models.restaurant import Restaurant
 from app.models.user import User
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---- Seed podaci ------------------------------------------------
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "admin123"
 
-CLUBS = [
+RESTAURANTS = [
     {
-        "name": "Behemot",
-        "city": "Zadar",
-        "contact_email": "behemot@example.com",
-        "contact_phone": "+385 23 555 111",
-        "username": "behemot",
-        "password": "klub123",
+        "username": "pizza_owner",
+        "password": "rest123",
+        "restaurant_name": "Pizza Place",
+        "address": "Ilica 1, Zagreb",
+        "menu": [
+            {"name": "Margherita", "price": 9.99, "description": "Sir i rajčica"},
+            {"name": "Capricciosa", "price": 11.99, "description": "Šunka i gljive"},
+        ],
     },
     {
-        "name": "Bolest",
-        "city": "Split",
-        "contact_email": "bolest@example.com",
-        "contact_phone": "+385 21 555 222",
-        "username": "bolest",
-        "password": "klub123",
+        "username": "burger_owner",
+        "password": "rest123",
+        "restaurant_name": "Burger House",
+        "address": "Vukovarska 10, Zagreb",
+        "menu": [
+            {"name": "Classic Burger", "price": 8.50, "description": "Govedina i salata"},
+            {"name": "Cheese Burger", "price": 9.50, "description": "Govedina i sir"},
+        ],
     },
 ]
 
+CUSTOMER = {"username": "customer1", "password": "cust123"}
+COURIER = {"username": "courier1", "password": "cour123"}
 
-def _hash_pw(plain: str) -> str:
-    return _bcrypt.hashpw(plain.encode(), _bcrypt.gensalt()).decode()
 
-
-async def _seed_club(session: AsyncSession, data: dict) -> Club:
-    """Kreiraj klub i pripadajućeg club usera ako ne postoje."""
-    result = await session.execute(select(Club).where(Club.name == data["name"]))
-    club = result.scalar_one_or_none()
-
-    if club is None:
-        club = Club(
-            name=data["name"],
-            city=data["city"],
-            contact_email=data.get("contact_email"),
-            contact_phone=data.get("contact_phone"),
-        )
-        session.add(club)
-        await session.flush()
-        logger.info("Kreiran klub: %s (id=%s)", club.name, club.id)
-    else:
-        logger.info("Klub '%s' već postoji — preskačem.", club.name)
-
-    result = await session.execute(
-        select(User).where(User.username == data["username"])
-    )
-    if result.scalar_one_or_none() is None:
+async def _ensure_user(
+    session: AsyncSession, username: str, password: str, role: str
+) -> User:
+    result = await session.execute(select(User).where(User.username == username))
+    user = result.scalar_one_or_none()
+    if user is None:
         user = User(
-            username=data["username"],
-            password_hash=_hash_pw(data["password"]),
-            role="club",
-            club_id=club.id,
+            username=username,
+            password_hash=hash_password(password),
+            role=role,
+            is_active=True,
         )
         session.add(user)
-        logger.info("Kreiran club user: %s (club=%s)", user.username, club.name)
+        await session.flush()
+        logger.info("Kreiran korisnik: %s (%s)", username, role)
+    return user
 
-    return club
+
+async def _seed_restaurant(session: AsyncSession, data: dict) -> None:
+    user = await _ensure_user(
+        session, data["username"], data["password"], "restaurant"
+    )
+
+    result = await session.execute(
+        select(Restaurant).where(Restaurant.owner_id == user.id)
+    )
+    restaurant = result.scalar_one_or_none()
+    if restaurant is None:
+        restaurant = Restaurant(
+            name=data["restaurant_name"],
+            address=data["address"],
+            owner_id=user.id,
+        )
+        session.add(restaurant)
+        await session.flush()
+        logger.info("Kreiran restoran: %s", restaurant.name)
+
+    for item_data in data["menu"]:
+        result = await session.execute(
+            select(MenuItem).where(
+                MenuItem.restaurant_id == restaurant.id,
+                MenuItem.name == item_data["name"],
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            session.add(
+                MenuItem(
+                    name=item_data["name"],
+                    description=item_data.get("description"),
+                    price=item_data["price"],
+                    restaurant_id=restaurant.id,
+                )
+            )
+            logger.info("Dodana stavka: %s (%s)", item_data["name"], restaurant.name)
 
 
 async def seed(session: AsyncSession) -> None:
-    """
-    Kreira inicijalne podatke ako ne postoje.
+    await _ensure_user(session, ADMIN_USERNAME, ADMIN_PASSWORD, "admin")
+    await _ensure_user(session, CUSTOMER["username"], CUSTOMER["password"], "customer")
+    await _ensure_user(session, COURIER["username"], COURIER["password"], "courier")
 
-    Redoslijed: klubovi prvo (jer user treba club_id), pa admin.
-    """
-
-    # -- 1. Klubovi + njihovi korisnici --
-    for club_data in CLUBS:
-        await _seed_club(session, club_data)
-
-    # -- 2. Admin user --
-    result = await session.execute(
-        select(User).where(User.username == ADMIN_USERNAME)
-    )
-    if result.scalar_one_or_none() is None:
-        admin = User(
-            username=ADMIN_USERNAME,
-            password_hash=_hash_pw(ADMIN_PASSWORD),
-            role="admin",
-            club_id=None,
-        )
-        session.add(admin)
-        logger.info("Kreiran admin: %s", admin.username)
+    for restaurant_data in RESTAURANTS:
+        await _seed_restaurant(session, restaurant_data)
 
     await session.commit()
     logger.info("Seed završen uspješno!")
 
 
 async def main() -> None:
-    """Entry point — otvara sesiju, pokreće seed, zatvara engine."""
     async with AsyncSessionLocal() as session:
         await seed(session)
-    # Čisto zatvaranje svih konekcija u poolu.
     await engine.dispose()
 
 
-# Omogućuje pokretanje sa: python -m app.seed
 if __name__ == "__main__":
     asyncio.run(main())
-

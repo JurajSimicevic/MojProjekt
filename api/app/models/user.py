@@ -1,21 +1,8 @@
 # =============================================================
 # user.py — User ORM model
 # =============================================================
-# Korisnik sustava — kupac, vlasnik restorana, dostavljač ili admin.
-#
-# Role:
-#   "customer"   — naručuje hranu
-#   "restaurant" — upravlja jelovnikom i narudžbama
-#   "courier"    — dostavlja narudžbe
-#   "admin"      — upravlja sustavom
-#
-# Dizajnerske odluke:
-#   - Uklonjen club_id jer restorani imaju vlastiti model
-# =============================================================
 
 from __future__ import annotations
-
-from typing import TYPE_CHECKING
 
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,12 +14,11 @@ class User(Base):
     """
     Korisnik sustava.
 
-    Atributi:
-        id:            Surrogate primary key.
-        username:      Login korisničko ime (jedinstven u sustavu).
-        password_hash: Bcrypt hash lozinke (NIKAD plain text).
-        role:          "customer", "restaurant", "courier", "admin".
-        is_active:     Može li se korisnik prijaviti.
+    Role:
+      customer   — naručuje hranu
+      restaurant — upravlja jelovnikom i narudžbama
+      courier    — dostavlja narudžbe
+      admin      — upravlja sustavom
     """
 
     __tablename__ = "users"

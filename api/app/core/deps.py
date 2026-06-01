@@ -83,12 +83,12 @@ def require_role(*allowed_roles: str):
     Factory dependency: propušta samo korisnike s navedenom rolom.
 
     Korištenje:
-      @router.post("/orders")
-      async def create_order(user: User = Depends(require_role("customer"))):
+      @router.post("/")
+      async def create_club(admin: User = Depends(require_role("admin"))):
           ...
 
-      @router.patch("/orders/{id}/status")
-      async def update_status(user: User = Depends(require_role("restaurant", "courier"))):
+      @router.get("/")
+      async def list_clubs(user: User = Depends(require_role("admin", "club"))):
           ...
 
     Ako korisnik nema odgovarajuću rolu → 403 Forbidden.

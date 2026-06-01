@@ -1,2 +1,2 @@
-# Označava "tests" kao Python paket.
-pass
+# Čini "tests" direktorij Python paketom.
+# Potrebno da pytest ispravno pronađe i importa testove.

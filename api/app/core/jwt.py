@@ -1,19 +1,3 @@
-# =============================================================
-# jwt.py — Kreiranje i dekodiranje JWT tokena
-# =============================================================
-# Access token: kratkotrajan (15 min), koristi se za autorizaciju.
-# Refresh token: dugotrajan (7 dana), koristi se za dobivanje
-#   novog access tokena bez ponovnog logina.
-#
-# Claims (payload):
-#   sub      — user ID (string po JWT konvenciji)
-#   role     — "admin" ili "club"
-#   restaurant_id — ID restorana (za vlasnike/osoblje)
-#   type     — "access" ili "refresh"
-#   exp      — istek tokena (automatski, iz timedelta)
-#   iss      — issuer (tko je izdao token)
-# =============================================================
-
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -28,7 +12,6 @@ ALGORITHM = "HS256"
 def create_access_token(
     user_id: int, role: str, restaurant_id: int | None = None
 ) -> str:
-    """Kreiraj kratkotrajan access token (15 min)."""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
@@ -42,7 +25,6 @@ def create_access_token(
 
 
 def create_refresh_token(user_id: int) -> str:
-    """Kreiraj dugotrajan refresh token (7 dana)."""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
@@ -54,14 +36,6 @@ def create_refresh_token(user_id: int) -> str:
 
 
 def decode_token(token: str) -> dict:
-    """
-    Dekodiraj i validiraj JWT token.
-
-    Baca JWTError ako:
-      - token je istekao (exp)
-      - potpis ne odgovara (secret)
-      - format nije valjan
-    """
     try:
         return jwt.decode(
             token,

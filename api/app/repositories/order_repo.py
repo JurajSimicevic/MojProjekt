@@ -1,60 +1,86 @@
-from sqlalchemy import select
+from collections import Counter
+
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.phases import OrderStatus
+from app.models.menu_item import MenuItem
 from app.models.order import Order
 from app.models.order_item import OrderItem
 from app.models.user import User
-from app.models.menu_item import MenuItem
 
-async def create(db: AsyncSession, customer_id: int, restaurant_id: int, item_ids: list[int]) -> Order:
-    """Kreiraj novu narudžbu."""
-    # Dohvati cijene jela iz baze (sigurnost!)
-    result = await db.execute(select(MenuItem).where(MenuItem.id.in_(item_ids)))
-    items = result.scalars().all()
-    
-    calculated_total = sum(item.price for item in items)
 
-    new_order = Order(
+async def create(
+    db: AsyncSession, customer_id: int, restaurant_id: int, item_ids: list[int]
+) -> Order:
+    counts = Counter(item_ids)
+    unique_ids = list(counts.keys())
+
+    result = await db.execute(select(MenuItem).where(MenuItem.id.in_(unique_ids)))
+    items_by_id = {item.id: item for item in result.scalars().all()}
+
+    total = 0.0
+    for item_id, qty in counts.items():
+        total += float(items_by_id[item_id].price) * qty
+
+    order = Order(
         customer_id=customer_id,
         restaurant_id=restaurant_id,
-        total_price=calculated_total
+        total_price=total,
     )
-    db.add(new_order)
-    await db.flush() # Dobivamo ID narudžbe
+    db.add(order)
+    await db.flush()
 
-    # Spremi stavke narudžbe
-    for item in items:
-        oi = OrderItem(
-            order_id=new_order.id,
-            menu_item_id=item.id,
-            item_name=item.name,
-            price_at_purchase=item.price
-        )
-        db.add(oi)
+    for item_id, qty in counts.items():
+        item = items_by_id.get(item_id)
+        if item is None:
+            raise ValueError(f"Menu item {item_id} not found")
+        for _ in range(qty):
+            db.add(
+                OrderItem(
+                    order_id=order.id,
+                    menu_item_id=item.id,
+                    item_name=item.name,
+                    price_at_purchase=item.price,
+                )
+            )
 
     await db.flush()
-    await db.refresh(new_order)
-    return new_order
+    return await get_by_id(db, order.id)
+
 
 async def get_by_id(db: AsyncSession, order_id: int) -> Order | None:
-    """Dohvati narudžbu po ID-u."""
-    return await db.get(Order, order_id)
+    result = await db.execute(
+        select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
+    )
+    return result.scalar_one_or_none()
 
-async def get_all_for_user(db: AsyncSession, user: User) -> list[Order]:
-    """
-    Dohvati listu narudžbi ovisno o ulozi korisnika.
-    Kupac vidi svoje, dostavljač one koje dostavlja, restoran svoje dolazne.
-    """
-    query = select(Order)
-    
+
+async def get_all_for_user(db: AsyncSession, user: User, restaurant_id: int | None) -> list[Order]:
+    query = select(Order).options(selectinload(Order.items))
+
     if user.role == "customer":
         query = query.where(Order.customer_id == user.id)
     elif user.role == "courier":
-        query = query.where(Order.courier_id == user.id)
+        query = query.where(
+            or_(
+                Order.courier_id == user.id,
+                and_(
+                    Order.status == OrderStatus.READY.value,
+                    Order.courier_id.is_(None),
+                ),
+            )
+        )
     elif user.role == "restaurant":
-        # Napomena: Ovdje bi u stvarnosti išao JOIN na Restaurant 
-        # da se provjeri ownership, za sada filtriramo po restaurant_id.
-        query = query.where(Order.restaurant_id == user.id)
-        
+        if restaurant_id is None:
+            return []
+        query = query.where(Order.restaurant_id == restaurant_id)
+    elif user.role == "admin":
+        pass
+    else:
+        return []
+
     query = query.order_by(Order.created_at.desc())
     result = await db.execute(query)
     return list(result.scalars().all())

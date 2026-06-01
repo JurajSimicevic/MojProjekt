@@ -1,18 +1,18 @@
-# Powerlifting Competition Registrations
+# Brza Dostava — Sustav narudžbi hrane
 
-Sustav za prijavu natjecatelja na powerlifting natjecanja.  
+Sustav za naručivanje hrane iz restorana s upravljanjem narudžbama i dostavom.  
 Projekt za kolegij **Razvoj web aplikacija** — SIT UNIZD.
 
 ---
 
 ## Tehnologije
 
-| Sloj     | Stack                                  |
-|----------|----------------------------------------|
-| Backend  | Python 3.11+, FastAPI, SQLAlchemy 2.0  |
-| Baza     | PostgreSQL 16 (Docker Compose)         |
-| Frontend | Vue 3, Pinia, Vue Router (dolazi P7+)  |
-| Auth     | JWT (access + refresh tokeni)          |
+| Sloj     | Stack                                          |
+|----------|------------------------------------------------|
+| Backend  | Python 3.11+, FastAPI, SQLAlchemy 2.0 (async) |
+| Baza     | PostgreSQL 16 (Docker Compose)                 |
+| Frontend | Vue 3, TypeScript, Pinia, Vue Router, Axios    |
+| Auth     | JWT (access + refresh tokeni)                  |
 
 ---
 
@@ -22,8 +22,8 @@ Prije pokretanja projekta trebate imati instalirano:
 
 - **Python** ≥ 3.11 — [python.org/downloads](https://www.python.org/downloads/)
 - **Docker Desktop** — [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+- **Node.js** ≥ 20 — [nodejs.org](https://nodejs.org/)
 - **Git** — [git-scm.com](https://git-scm.com/)
-- (Za frontend, od predavanja 7) **Node.js** ≥ 18
 
 ---
 
@@ -54,6 +54,8 @@ docker compose ps
 # Status treba biti "healthy"
 ```
 
+> pgAdmin je dostupan na http://localhost:5050 (admin@admin.com / admin)
+
 ### 3. Pokreni backend (FastAPI)
 
 ```bash
@@ -68,16 +70,60 @@ python -m venv .venv
 # Windows cmd:         .venv\Scripts\activate.bat
 
 # Instaliraj zavisnosti:
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+
+# Primijeni migracije (kreira tablice):
+python -m alembic upgrade head
+
+# Umetni seed podatke:
+python -m app.seed
 
 # Pokreni dev server:
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
-### 4. Provjera
+### 4. Provjera backenda
 
 - Health check: http://127.0.0.1:8000/health → `{"status": "ok"}`
 - Swagger UI:   http://127.0.0.1:8000/docs
+
+### 5. Pokreni frontend (Vue 3)
+
+U **novom terminalu** (backend mora biti pokrenut):
+
+```bash
+cd web
+
+# Instaliraj zavisnosti (jednom):
+npm install
+
+# Pokreni dev server:
+npm run dev
+```
+
+Frontend se otvara na: http://localhost:5173
+
+Za build (produkcija):
+
+```bash
+npm run build     # Generira web/dist/
+npm run preview   # Lokalni pregled builda
+```
+
+> **Env varijabla:** Po defaultu frontend šalje zahtjeve na `http://localhost:8000`.
+> Za produkcijski deploy dodaj `VITE_API_URL=https://tvoj-backend.url` u `.env` datoteku unutar `web/`.
+
+---
+
+## Korisnici za testiranje (seed)
+
+| Uloga      | Korisničko ime  | Lozinka  | Opis                        |
+|------------|-----------------|----------|-----------------------------|
+| admin      | `admin`         | `admin123` | Administracija sustava    |
+| restaurant | `pizza_owner`   | `rest123`  | Vlasnik Pizza Place-a     |
+| restaurant | `burger_owner`  | `rest123`  | Vlasnik Burger House-a    |
+| customer   | `customer1`     | `cust123`  | Kupac                     |
+| courier    | `courier1`      | `cour123`  | Dostavljač                |
 
 ---
 
@@ -88,12 +134,12 @@ repo/
 ├── api/                      # FastAPI backend
 │   ├── app/
 │   │   ├── main.py           # App factory — sastavlja aplikaciju
-│   │   ├── seed.py           # Seed podaci (admin + demo klub)
+│   │   ├── seed.py           # Seed podaci (admin, restorani, kupac, kurir)
 │   │   ├── core/             # Infrastruktura (config, errors, logging)
 │   │   │   ├── config.py     # Pydantic Settings — čita env varijable
 │   │   │   ├── database.py   # SQLAlchemy engine, session, Base
 │   │   │   ├── errors.py     # AppError + globalni exception handler
-│   │   │   ├── logging.py    # Konfiguracija logiranja
+│   │   │   ├── phases.py     # OrderStatus enum (stanje narudžbe)
 │   │   │   └── deps.py       # FastAPI dependencije (DB session, auth)
 │   │   ├── routers/          # HTTP sloj — tanki routeri
 │   │   ├── services/         # Poslovna logika (pravila, validacija)
@@ -101,15 +147,30 @@ repo/
 │   │   ├── models/           # SQLAlchemy ORM modeli (tablice)
 │   │   └── schemas/          # Pydantic DTO-ovi (ulaz/izlaz API-ja)
 │   ├── alembic/              # Alembic migracije
-│   │   ├── env.py            # Konfiguracija migracijskog okruženja
-│   │   ├── script.py.mako    # Template za nove migracije
-│   │   └── versions/         # Migracijske datoteke
-│   ├── alembic.ini           # Alembic konfiguracija
+│   ├── alembic.ini
 │   ├── tests/
 │   ├── requirements.txt
 │   └── pyproject.toml
-├── web/                      # Vue frontend (od predavanja 7)
-├── docker-compose.yml        # PostgreSQL u kontejneru
+├── web/                      # Vue 3 frontend
+│   ├── src/
+│   │   ├── main.ts           # Entry point (boot: dohvati /auth/me)
+│   │   ├── App.vue           # Root — prebacuje layout (gost/aplikacija)
+│   │   ├── router/           # Vue Router + role-based guardovi
+│   │   ├── stores/           # Pinia: auth.ts, obavijesti.ts
+│   │   ├── services/         # Axios API klijent + interceptor (auto-refresh)
+│   │   ├── types/            # TypeScript interfacei za sve entitete
+│   │   ├── components/       # Dijeljene komponente (Gumb, Modal, Tablica...)
+│   │   ├── layouts/          # LayoutGost.vue, LayoutAplikacija.vue
+│   │   ├── styles/           # CSS tokens, reset, globalne klase
+│   │   └── views/
+│   │       ├── admin/        # Restorani, Osoblje, Narudžbe (admin role)
+│   │       ├── restoran/     # Jelovnik, Narudžbe (restaurant role)
+│   │       ├── dostavljac/   # Dostave (courier role)
+│   │       └── kupac/        # Restorani, Narudžbe (customer role)
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.ts
+├── docker-compose.yml        # PostgreSQL + pgAdmin
 ├── .env.example              # Primjer env varijabli (IDE U GIT)
 ├── .gitignore
 └── README.md
@@ -129,7 +190,7 @@ Svaki sloj ima jednu odgovornost. Pravilo: **gornji sloj može zvati donji, ali 
   └────┬─────┘  NE sadrži poslovnu logiku.
        ↓
   ┌─────────┐
-  │ Service  │  Provodi poslovna pravila (rokovi, vlasništvo, validacija).
+  │ Service  │  Provodi poslovna pravila (statusi, vlasništvo, validacija).
   └────┬─────┘  NE zna za HTTP status kodove.
        ↓
   ┌──────────────┐
@@ -141,13 +202,13 @@ Svaki sloj ima jednu odgovornost. Pravilo: **gornji sloj može zvati donji, ali 
   └─────────┘
 ```
 
-| Sloj         | Odgovornost                              | Primjer datoteke         |
-|--------------|------------------------------------------|--------------------------|
-| Router       | HTTP: parsiranje requesta, status kodovi | `routers/health.py`      |
-| Service      | Poslovna pravila, validacija, orkestra.  | `services/auth.py`       |
-| Repository   | SQL upiti, transakcije                   | `repositories/user.py`   |
-| Model        | ORM definicija tablica                   | `models/user.py`         |
-| Schema (DTO) | Pydantic ulaz/izlaz modeli               | `schemas/user.py`        |
+| Sloj         | Odgovornost                              | Primjer datoteke              |
+|--------------|------------------------------------------|-------------------------------|
+| Router       | HTTP: parsiranje requesta, status kodovi | `routers/orders.py`           |
+| Service      | Poslovna pravila, validacija, orkestra.  | `services/order_service.py`   |
+| Repository   | SQL upiti, transakcije                   | `repositories/order_repo.py`  |
+| Model        | ORM definicija tablica                   | `models/order.py`             |
+| Schema (DTO) | Pydantic ulaz/izlaz modeli               | `schemas/order.py`            |
 
 ---
 
@@ -184,13 +245,30 @@ Scope: `api`, `web`, ili prazan za root-level promjene.
 SQLAlchemy modeli žive u `api/app/models/`. Svaki model je Python klasa
 koja odgovara jednoj tablici u bazi:
 
-| Model | Tablica | Opis |
-|-------|---------|------|
-| `Club`  | `clubs`  | Powerlifting klub (name, city) |
-| `User`  | `users`  | Korisnik sustava (admin ili club user) |
+| Model        | Tablica       | Opis                                      |
+|--------------|---------------|-------------------------------------------|
+| `User`       | `users`       | Korisnik (admin, restaurant, courier, customer) |
+| `Restaurant` | `restaurants` | Restoran s vlasnikom (owner_id → users)   |
+| `MenuItem`   | `menu_items`  | Stavka jelovnika (restaurant_id → restaurants) |
+| `Order`      | `orders`      | Narudžba s statusom i tijek isporuke      |
+| `OrderItem`  | `order_items` | Stavke unutar narudžbe (snapshot cijene)  |
 
-Relacija: `Club 1 → N User` (jedan klub ima jednog ili više korisnika).
-Admin korisnik ima `club_id = NULL`.
+### Stanja narudžbe (OrderStatus)
+
+```
+pending → accepted → preparing → ready → on_the_way → delivered
+                ↘                                        
+              cancelled (samo pending, od strane kupca ili admina)
+```
+
+| Status       | Tko mijenja        |
+|--------------|--------------------|
+| → accepted   | restaurant         |
+| → preparing  | restaurant         |
+| → ready      | restaurant         |
+| → on_the_way | courier            |
+| → delivered  | courier            |
+| → cancelled  | customer (pending) |
 
 ### Migracije (Alembic)
 
@@ -200,16 +278,16 @@ Alembic je "version control za bazu" — svaka promjena modela zahtijeva novu mi
 cd api
 
 # Primijeni sve migracije (kreira tablice):
-alembic upgrade head
+python -m alembic upgrade head
 
 # Rollback zadnje migracije:
-alembic downgrade -1
+python -m alembic downgrade -1
 
 # Generiraj novu migraciju nakon promjene modela:
-alembic revision --autogenerate -m "opis promjene"
+python -m alembic revision --autogenerate -m "opis promjene"
 
 # Prikaži povijest migracija:
-alembic history
+python -m alembic history
 ```
 
 > **Važno:** Uvijek pročitaj generiranu migraciju prije `upgrade`!
@@ -224,10 +302,7 @@ cd api
 python -m app.seed
 ```
 
-Kreira:
-- **Admin user:** `admin@pl.local` / `admin123` (role=admin, bez kluba)
-- **Demo klub:** Behemot (Zadar)
-- **Club user:** `klub@pl.local` / `klub123` (role=club, klub Behemot)
+Kreira korisnike, 2 restorana s jelovnicima, kupca i dostavljača (vidi tablicu gore).
 
 Skripta je **idempotentna** — sigurno je pokrenuti je više puta
 (preskače zapise koji već postoje).
@@ -237,23 +312,24 @@ Skripta je **idempotentna** — sigurno je pokrenuti je više puta
 Kad želiš krenuti ispočetka (briše SVE podatke):
 
 ```bash
-docker compose down -v           # Obriši kontejner + volume
-docker compose up -d db          # Pokreni svježu bazu
+docker compose down -v                        # Obriši kontejner + volume
+docker compose up -d db                       # Pokreni svježu bazu
 cd api
-alembic upgrade head             # Kreiraj tablice
-python -m app.seed               # Umetni seed podatke
+python -m alembic upgrade head               # Kreiraj tablice
+python -m app.seed                           # Umetni seed podatke
 ```
 
 ### Direktan pristup bazi (psql)
 
 ```bash
-docker exec -it rwapred1-db-1 psql -U pl_user -d pl_reg
+docker exec -it mojprojekt1-db-1 psql -U fd_user -d food_delivery
 
 # Korisni SQL upiti:
-# \dt                            — lista tablica
-# SELECT * FROM clubs;           — pregled klubova
-# SELECT id, email, role FROM users;  — pregled korisnika
-# \q                             — izlaz
+# \dt                              — lista tablica
+# SELECT id, username, role FROM users;   — pregled korisnika
+# SELECT * FROM restaurants;       — pregled restorana
+# SELECT * FROM orders;            — pregled narudžbi
+# \q                               — izlaz
 ```
 
 ---
@@ -268,17 +344,18 @@ docker compose logs db           # Logovi baze
 docker compose down              # Zaustavi sve
 docker compose down -v           # Zaustavi + obriši podatke (reset)
 
-# -- Backend --
-uvicorn app.main:app --reload    # Dev server s auto-reloadom
-pytest                           # Pokreni testove
-ruff check .                     # Lint (provjera kvalitete koda)
-black .                          # Format (automatsko formatiranje)
+# -- Backend (iz api/ direktorija, s aktiviranim venvom) --
+python -m uvicorn app.main:app --reload    # Dev server s auto-reloadom
+python -m pytest                           # Pokreni testove
+python -m alembic upgrade head            # Primijeni sve migracije
+python -m alembic downgrade -1            # Rollback zadnje migracije
+python -m alembic revision --autogenerate -m "opis"  # Nova migracija
+python -m app.seed                        # Seed podatke u bazu
 
-# -- Migracije --
-alembic upgrade head             # Primijeni sve migracije
-alembic downgrade -1             # Rollback zadnje migracije
-alembic revision --autogenerate -m "opis"  # Nova migracija
-python -m app.seed               # Seed podatke u bazu
+# -- Frontend (iz web/ direktorija) --
+npm run dev                      # Dev server (http://localhost:5173)
+npm run build                    # Produkcijski build
+npm run typecheck                # TypeScript provjera
 
 # -- Git --
 git log --oneline --decorate     # Kratki pregled povijesti
