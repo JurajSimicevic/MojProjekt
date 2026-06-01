@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,6 +10,18 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "change-me-in-production"
     JWT_ISSUER: str = "food-delivery-api"
     CORS_ORIGINS: str = ""
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def force_asyncpg_scheme(cls, v: str) -> str:
+        """Rewrite bare postgresql:// or postgres:// URLs to use the asyncpg
+        driver.  Railway injects DATABASE_URL without a driver qualifier, which
+        would cause SQLAlchemy to fall back to psycopg2 (not installed)."""
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        return v
 
     @property
     def cors_origins_list(self) -> list[str]:
